@@ -35,7 +35,7 @@ trap 'rm -f -- "$ARCHIVE"' EXIT
 
 echo "Creating deployment bundle (local .env, config and data are excluded)..."
 tar -czf "$ARCHIVE" -C "$PROJECT_DIR" -- \
-    Dockerfile docker-compose.yml README.md .dockerignore .env.example \
+    Dockerfile docker-compose.yml README.md .dockerignore .env.example requirements.txt \
     app scripts/install-server.sh
 
 echo "Copying files to ${TARGET}. OpenSSH will prompt for the SSH password if needed."

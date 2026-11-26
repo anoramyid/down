@@ -3,6 +3,10 @@ from logging.handlers import TimedRotatingFileHandler
 from flask import Flask, Response, abort, jsonify, request, send_file, send_from_directory
 
 ROOT = os.path.realpath(os.environ.get("ROOT", "/data"))
+browser_setting = os.environ.get("ENABLE_BROWSER", "1").strip().lower()
+if browser_setting not in ("0", "1", "false", "true"):
+    raise ValueError("ENABLE_BROWSER harus bernilai 0 atau 1")
+ENABLE_BROWSER = browser_setting in ("1", "true")
 BROWSER_DIR = os.path.realpath(os.environ.get("BROWSER_DOWNLOAD_DIR", os.path.join(ROOT, "browser")))
 if BROWSER_DIR == ROOT or not BROWSER_DIR.startswith(ROOT + os.sep):
     raise ValueError("BROWSER_DOWNLOAD_DIR harus berada di dalam ROOT")
@@ -13,6 +17,14 @@ DOWNLOADS_DB = os.path.join(CONF, "downloads.json")
 SETTINGS_DB = os.path.join(CONF, "settings.json")
 APP_USER = os.environ.get("APP_USER", "")
 APP_PASS = os.environ.get("APP_PASS", "")
+AUTH_FILE = os.environ.get("AUTH_FILE", "")
+if AUTH_FILE:
+    with open(AUTH_FILE, encoding="utf-8") as f:
+        auth_data = json.load(f)
+    if (not isinstance(auth_data, dict) or not isinstance(auth_data.get("APP_USER"), str)
+            or not isinstance(auth_data.get("APP_PASS"), str)):
+        raise ValueError("AUTH_FILE harus berisi APP_USER dan APP_PASS")
+    APP_USER, APP_PASS = auth_data["APP_USER"], auth_data["APP_PASS"]
 PORT = int(os.environ.get("PORT", "9191"))
 RETENTION_SECONDS = 30 * 24 * 60 * 60
 try:
@@ -39,7 +51,8 @@ MODES = ["std", "browser", "tls"]  # standar -> header browser -> tiru TLS Chrom
 app = Flask(__name__, static_folder="static")
 lock, sem = threading.Lock(), threading.Semaphore(int(os.environ.get("MAX_PARALLEL", "2")))
 tasks, downloads, cancels = {}, {}, set()
-os.makedirs(BROWSER_DIR, exist_ok=True)
+if ENABLE_BROWSER:
+    os.makedirs(BROWSER_DIR, exist_ok=True)
 
 
 class RateLimiter:
@@ -224,8 +237,8 @@ def worker(t):
 def auth():
     if APP_USER or APP_PASS:
         a = request.authorization
-        if (not a or not hmac.compare_digest(a.username or "", APP_USER)
-                or not hmac.compare_digest(a.password or "", APP_PASS)):
+        if (not a or not hmac.compare_digest((a.username or "").encode("utf-8"), APP_USER.encode("utf-8"))
+                or not hmac.compare_digest((a.password or "").encode("utf-8"), APP_PASS.encode("utf-8"))):
             return Response("Login diperlukan", 401, {"WWW-Authenticate": 'Basic realm="Drive Tasks"'})
 
 
@@ -241,7 +254,7 @@ def list_tasks():
 
 @app.get("/api/settings")
 def settings():
-    return jsonify(download_limit_mib=rate_limiter.limit_mib())
+    return jsonify(download_limit_mib=rate_limiter.limit_mib(), browser_enabled=ENABLE_BROWSER)
 
 
 @app.post("/api/settings")
@@ -282,6 +295,8 @@ def get_file(tid):
 
 @app.get("/api/browser-files")
 def list_browser_files():
+    if not ENABLE_BROWSER:
+        abort(404)
     items = []
     for name in os.listdir(BROWSER_DIR):
         path = os.path.join(BROWSER_DIR, name)
@@ -295,6 +310,8 @@ def list_browser_files():
 
 @app.get("/api/browser-files/<name>")
 def get_browser_file(name):
+    if not ENABLE_BROWSER:
+        abort(404)
     if not name or name in (".", "..") or os.path.basename(name) != name:
         abort(404)
     candidate = os.path.join(BROWSER_DIR, name)
@@ -419,16 +436,17 @@ def cleanup_expired():
             expired_logs += 1
 
     expired_browser_downloads = 0
-    for name in os.listdir(BROWSER_DIR):
-        path = os.path.join(BROWSER_DIR, name)
-        try:
-            if (not os.path.islink(path) and os.path.isfile(path)
-                    and os.path.getmtime(path) < cutoff):
-                os.remove(path)
-                expired_browser_downloads += 1
-        except OSError as e:
-            log_event("browser_download_retention_failed", level=logging.ERROR,
-                      error_type=type(e).__name__)
+    if ENABLE_BROWSER:
+        for name in os.listdir(BROWSER_DIR):
+            path = os.path.join(BROWSER_DIR, name)
+            try:
+                if (not os.path.islink(path) and os.path.isfile(path)
+                        and os.path.getmtime(path) < cutoff):
+                    os.remove(path)
+                    expired_browser_downloads += 1
+            except OSError as e:
+                log_event("browser_download_retention_failed", level=logging.ERROR,
+                          error_type=type(e).__name__)
 
     log_event("retention_cleanup", deleted_downloads=deleted_downloads,
               skipped_downloads=skipped_downloads, expired_browser_downloads=expired_browser_downloads,

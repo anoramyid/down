@@ -35,7 +35,7 @@ if errorlevel 1 (
 set "TARGET=%SSH_USER%@%SERVER_IP%"
 set "ARCHIVE=%TEMP%\drive-tasks-%RANDOM%-%RANDOM%.tar.gz"
 echo [2/5] Creating deployment bundle. Local .env, config and data are excluded.
-tar.exe -czf "%ARCHIVE%" -C "%CD%" Dockerfile docker-compose.yml README.md .dockerignore .env.example app scripts/install-server.sh
+tar.exe -czf "%ARCHIVE%" -C "%CD%" Dockerfile docker-compose.yml README.md .dockerignore .env.example requirements.txt app scripts/install-server.sh
 if errorlevel 1 (
     echo Could not create deployment archive.
     goto :finish

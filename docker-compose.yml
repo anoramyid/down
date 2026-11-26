@@ -11,6 +11,7 @@ services:
       - MAX_PARALLEL=2
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - DOWNLOAD_LIMIT_MIB=${DOWNLOAD_LIMIT_MIB:-5}
+      - ENABLE_BROWSER=1
       - BROWSER_DOWNLOAD_DIR=/data/browser
     volumes:
       - ${DATA_DIR:-./data}:/data

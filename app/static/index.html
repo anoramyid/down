@@ -22,13 +22,13 @@ label.l{display:block;margin:18px 0 7px;font-size:13px;font-weight:550;color:var
 #err{color:var(--er);margin-top:12px;font-size:13px}.ft{display:flex;justify-content:flex-end;gap:8px;margin-top:22px}details{margin-top:15px}summary{cursor:pointer;color:var(--p);font-size:13px;font-weight:500}
 </style></head><body>
 <header><div><h1>Drive Tasks</h1><small><span id="sum">Unduh URL ke server, lalu ambil file lewat jaringan lokal</span> · <span id="limit">Batas kecepatan dimuat…</span></small></div>
-<div class="head-actions"><a class="p" id="browser-link" target="_blank" rel="noopener">Buka Browser</a><button class="p" onclick="openNew()">+ Download</button></div></header>
+<div class="head-actions"><a class="p" id="browser-link" target="_blank" rel="noopener" hidden>Buka Browser</a><button class="p" onclick="openNew()">+ Download</button></div></header>
 <main><section class="hero"><p class="eyebrow">DOWNLOAD MANAGER</p><h2>Unduh file.<br>Atur kecepatannya.</h2><p>Download langsung ke server, kendalikan batas kecepatan, lalu ambil file dari jaringan lokal.</p></section>
 <div class="section-heading"><div><h2>Download URL</h2><p>Atur kecepatan untuk download yang dikelola aplikasi.</p></div></div>
-<div class="task settings-card"><div class="row settings-row"><div class="t"><b>Batas global</b><small>Untuk semua download dari tombol + Download. Nilai 0 = tanpa batas; unduhan langsung di Chromium tidak terkena limit ini.</small></div>
+<div class="task settings-card"><div class="row settings-row"><div class="t"><b>Batas global</b><small id="global-description">Untuk semua download dari tombol + Download.</small></div>
 <div class="limit-control"><input type="number" id="global-limit" aria-label="Batas global MiB per detik" min="0" max="1024" step="0.1"><button class="s" onclick="setGlobalLimit()">Terapkan</button></div></div><div id="settings-error" class="limit-message"></div></div>
 <div id="list"></div><div id="empty" hidden><b>Belum ada download</b><br>Klik "+ Download" untuk memulai.</div>
-<div class="section-heading" style="margin-top:54px"><div><h2>File hasil browser</h2><p>File yang diunduh melalui Chromium jarak jauh.</p></div></div><div id="browser-files"></div><div id="browser-empty" class="m" hidden>Belum ada file browser.</div></main>
+<section id="browser-section" hidden><div class="section-heading" style="margin-top:54px"><div><h2>File hasil browser</h2><p>File yang diunduh melalui Chromium jarak jauh.</p></div></div><div id="browser-files"></div><div id="browser-empty" class="m" hidden>Belum ada file browser.</div></section></main>
 <dialog id="dlg"><b style="font-size:17px">Download URL</b>
 <label class="l">URL</label><input type="text" id="src" placeholder="https://...">
 <div id="dl"><label class="l">Mode download</label><div class="m">Otomatis: Standar → Mirip browser → Mirip browser + TLS. Naik mode jika ditolak dengan 403 atau 429.</div>
@@ -40,23 +40,22 @@ label.l{display:block;margin:18px 0 7px;font-size:13px;font-weight:550;color:var
 <script>
 const $=s=>document.querySelector(s),E=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const MODE={std:'Standar',browser:'Mirip browser',tls:'Mirip browser + TLS'},TYPE={download:'Download'},ST={queued:'Antre',running:'Berjalan',done:'Selesai',failed:'Gagal',cancelled:'Dibatalkan'};
-$('#browser-link').href=`https://${location.hostname}:3001/`;
 async function openNew(){$('#err').textContent='';$('#src').value='';$('#task-limit').value='0';dlg.showModal()}
 async function post(b){const r=await fetch('api/tasks',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});return[r,await r.json()]}
 async function go(){const [r,j]=await post({type:'download',src:$('#src').value.trim(),mode:'std',auto:true,limit_mib:Number($('#task-limit').value||0),referer:$('#ref').value.trim(),cookie:$('#cook').value.trim(),name:$('#nm').value.trim()});
  if(!r.ok){$('#err').textContent=j.error;return}dlg.close();load()}
 const act=async(id,a)=>{await fetch('api/tasks/'+id+(a=='cancel'?'/cancel':''),{method:a=='cancel'?'POST':'DELETE'});load()};
 const retry=async id=>{const x=T.find(t=>t.id==id);await post({...x,mode:'std',auto:true});load()};
-let T=[];
+let T=[],browserEnabled=false,browserFilesTimer=null;
 const card=x=>{const on=x.status=='running'||x.status=='queued';
  return `<div class="task"><div class="row"><div class="t"><b title="${E(x.src)}">${TYPE[x.type]||E(x.type)}: ${E(x.src)}</b><small>${x.output?'File: '+E(x.output):''}${x.used?' &middot; '+MODE[x.used]:''}${x.limit_mib>0?' · limit task '+x.limit_mib+' MiB/s':''}</small></div><span class="bd ${x.status}">${ST[x.status]}</span></div>
  ${on||x.status=='done'?`<div class="bar"><i style="width:${x.progress}%"></i></div>`:''}
  <div class="${x.status=='failed'?'':'m'}" style="font-size:13px;${x.status=='failed'?'color:var(--er);margin-top:8px':''}">${E(x.msg)}${x.note&&x.status!='done'?' &middot; '+E(x.note):''}</div>
  <div class="acts">${on&&x.type=='download'?`<button class="s" onclick="act('${x.id}','cancel')">Batal</button>`:''}${x.status=='failed'&&x.type=='download'?`<button class="s" onclick="retry('${x.id}')">Ulangi (otomatis)</button>`:''}${x.status=='done'&&x.type=='download'&&x.output?`<button class="s" onclick="location.href='api/tasks/${x.id}/file'">Ambil file</button>`:''}${on?'':`<button class="s" onclick="act('${x.id}','del')">Hapus</button>`}</div></div>`};
-async function loadSettings(){const r=await fetch('api/settings');if(!r.ok)return;const s=await r.json();$('#global-limit').value=s.download_limit_mib;$('#limit').textContent=s.download_limit_mib>0?`Limit ${s.download_limit_mib} MiB/s total`:'Tanpa limit global'}
+async function loadSettings(){const r=await fetch('api/settings');if(!r.ok)return;const s=await r.json();$('#global-limit').value=s.download_limit_mib;$('#limit').textContent=s.download_limit_mib>0?`Limit ${s.download_limit_mib} MiB/s total`:'Tanpa limit global';browserEnabled=!!s.browser_enabled;$('#browser-link').hidden=!browserEnabled;$('#browser-section').hidden=!browserEnabled;$('#global-description').textContent=browserEnabled?'Untuk semua download dari tombol + Download. Nilai 0 = tanpa batas; unduhan langsung di Chromium tidak terkena limit ini.':'Untuk semua download dari tombol + Download. Nilai 0 = tanpa batas.';if(browserEnabled){$('#browser-link').href=`https://${location.hostname}:3001/`;loadBrowserFiles();if(!browserFilesTimer)browserFilesTimer=setInterval(loadBrowserFiles,5000)}else if(browserFilesTimer){clearInterval(browserFilesTimer);browserFilesTimer=null}}
 async function setGlobalLimit(){const raw=$('#global-limit').value.trim(),r=await fetch('api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({download_limit_mib:raw===''?null:Number(raw)})}),j=await r.json();$('#settings-error').classList.toggle('error',!r.ok);$('#settings-error').textContent=r.ok?'Batas global diperbarui':j.error;if(r.ok)await loadSettings()}
-async function loadBrowserFiles(){const r=await fetch('api/browser-files');if(!r.ok)return;const files=await r.json();$('#browser-empty').hidden=files.length>0;$('#browser-files').innerHTML=files.map(f=>`<div class="task"><div class="row"><div class="t"><b>${E(f.name)}</b><small>${(f.size/1048576).toFixed(1)} MB · ${E(new Date(f.modified*1000).toLocaleString())}</small></div><a class="s" href="api/browser-files/${encodeURIComponent(f.name)}">Ambil file</a></div></div>`).join('')}
+async function loadBrowserFiles(){if(!browserEnabled)return;const r=await fetch('api/browser-files');if(!r.ok)return;const files=await r.json();$('#browser-empty').hidden=files.length>0;$('#browser-files').innerHTML=files.map(f=>`<div class="task"><div class="row"><div class="t"><b>${E(f.name)}</b><small>${(f.size/1048576).toFixed(1)} MB · ${E(new Date(f.modified*1000).toLocaleString())}</small></div><a class="s" href="api/browser-files/${encodeURIComponent(f.name)}">Ambil file</a></div></div>`).join('')}
 async function load(){const r=await fetch('api/tasks');if(!r.ok)return;T=await r.json();const n=s=>T.filter(x=>x.status==s).length;
  if(T.length)$('#sum').textContent=`${n('running')+n('queued')} berjalan · ${n('done')} selesai · ${n('failed')} gagal`;$('#empty').hidden=T.length>0;$('#list').innerHTML=T.map(card).join('')}
-load();loadSettings();loadBrowserFiles();setInterval(load,2000);setInterval(loadBrowserFiles,5000);
+load();loadSettings();setInterval(load,2000);
 </script></body></html>

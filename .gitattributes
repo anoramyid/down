@@ -1,0 +1,4 @@
+*.sh text eol=lf
+*.bat text eol=crlf
+VERSION text eol=lf
+requirements.txt text eol=lf
