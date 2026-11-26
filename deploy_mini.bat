@@ -58,14 +58,14 @@ echo [4/4] Installing or updating. Enter the sudo password if prompted.
 ssh.exe -tt -o ConnectTimeout=15 "%TARGET%" "bash ~/drive-tasks-mini-receiver.sh ~/%REMOTE_ARCHIVE%"
 if errorlevel 1 (
     echo Remote installation failed. Review the server output above.
-    echo Installer logs are saved under ~/drive-tasks-mini-install-logs/ on the server.
+    echo Complete installer logs are saved under /mnt/share/drive-tasks-mini/install-logs/ on the server.
     goto :finish
 )
 
 echo.
 echo Mini deployment finished. If this version was not newer, the service was left unchanged.
 echo Mini downloader: http://%SERVER_IP%:2121
-echo Installer logs: ~/drive-tasks-mini-install-logs/ on the server.
+echo Complete installer logs: /mnt/share/drive-tasks-mini/install-logs/ on the server.
 set "result=0"
 
 :finish

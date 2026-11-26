@@ -21,9 +21,10 @@ install -d -m 755 "$BASE"
 LOG_DIR="$BASE/install-logs"
 install -d -m 700 -o "${SUDO_USER:-root}" "$LOG_DIR"
 find "$LOG_DIR" -type f -name 'install-*.log' -mtime +30 -delete
-LOG_FILE="$LOG_DIR/install-$(date +%Y%m%dT%H%M%S).log"
+LOG_FILE="$LOG_DIR/install-$(date +%Y%m%dT%H%M%S)-$$.log"
 exec > >(tee -a "$LOG_FILE") 2>&1
 echo "Installer log: $LOG_FILE"
+echo "Starting Drive Tasks Mini installer."
 
 BACKUP_DIR=
 CONFIG_STAGE=
@@ -31,8 +32,19 @@ cleanup_backup() {
     [[ -z "$BACKUP_DIR" ]] || rm -rf -- "$BACKUP_DIR"
     [[ -z "$CONFIG_STAGE" ]] || rm -rf -- "$CONFIG_STAGE"
 }
-trap cleanup_backup EXIT
+finish_install() {
+    local status=$?
+    cleanup_backup
+    if [[ $status -eq 0 ]]; then
+        echo "[SUCCESS] Installer finished. Full log: $LOG_FILE"
+    else
+        echo "[FAIL] Installer exited with code $status. Full log: $LOG_FILE" >&2
+    fi
+    exit "$status"
+}
+trap finish_install EXIT
 
+echo "[1/8] Checking release version."
 NEW_VERSION="$(tr -d '\r\n' < "$STAGING/VERSION")"
 if [[ ! "$NEW_VERSION" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
     echo "VERSION must use numeric major.minor.patch format." >&2
@@ -49,6 +61,33 @@ version_is_newer() {
         if ((10#${newer[$i]} < 10#${older[$i]})); then return 1; fi
     done
     return 1
+}
+
+run_with_progress() {
+    local label="$1"
+    local process_id
+    local elapsed=0
+    local status
+    shift
+    echo "[RUN] $label"
+    "$@" &
+    process_id=$!
+    while kill -0 "$process_id" 2>/dev/null; do
+        sleep 1
+        if kill -0 "$process_id" 2>/dev/null; then
+            elapsed=$((elapsed + 1))
+            if ((elapsed % 5 == 0)); then
+                echo "[RUNNING] $label is still running (${elapsed}s elapsed)."
+            fi
+        fi
+    done
+    if wait "$process_id"; then
+        echo "[OK] $label"
+    else
+        status=$?
+        echo "[FAIL] $label (exit $status)." >&2
+        return "$status"
+    fi
 }
 
 OLD_TARGET=
@@ -75,6 +114,7 @@ if [[ -f "$CURRENT_RELEASE" && ! -L "$CURRENT_RELEASE" ]]; then
         echo "The installed VERSION is invalid; refusing to replace it." >&2
         exit 1
     fi
+    echo "Bundle version: $NEW_VERSION; installed version: $OLD_VERSION."
     if ! version_is_newer "$NEW_VERSION" "$OLD_VERSION"; then
         echo "Installed Mini version $OLD_VERSION is current or newer; skipping installation."
         exit 0
@@ -93,6 +133,7 @@ elif [[ -L "$LEGACY_BASE/current" ]]; then
         echo "The previous Lite VERSION is invalid; refusing to migrate it." >&2
         exit 1
     fi
+    echo "Bundle version: $NEW_VERSION; previous Lite version: $OLD_VERSION."
     if version_is_newer "$OLD_VERSION" "$NEW_VERSION"; then
         echo "The previous Lite version $OLD_VERSION is newer; update the local VERSION before migrating." >&2
         exit 1
@@ -101,8 +142,11 @@ elif [[ -L "$LEGACY_BASE/current" ]]; then
 elif [[ -e "$LEGACY_BASE/current" ]]; then
     echo "$LEGACY_BASE/current exists but is not a release symlink; refusing to migrate it." >&2
     exit 1
+else
+    echo "Bundle version: $NEW_VERSION; no existing Lite release found."
 fi
 
+echo "[2/8] Checking Debian/Ubuntu and Python requirements."
 if [[ ! -f /etc/os-release ]] || ! grep -qiE '^(ID|ID_LIKE)=.*(debian|ubuntu)' /etc/os-release; then
     echo "Mini installation currently supports Debian/Ubuntu servers only." >&2
     exit 1
@@ -124,14 +168,17 @@ fi
 if [[ "$PYTHON_READY" -eq 0 ]]; then
     echo "Installing Python 3 and virtual-environment support (no Docker or browser packages)."
     export DEBIAN_FRONTEND=noninteractive
-    apt-get update
-    apt-get install -y ca-certificates python3 python3-venv
+    run_with_progress "Update package lists" apt-get update
+    run_with_progress "Install Python and virtual-environment support" \
+        apt-get install -y ca-certificates python3 python3-venv
 fi
 python3 -c 'import sys; raise SystemExit(sys.version_info < (3, 10))' || {
     echo "Python 3.10 or newer is required; found $(python3 --version)." >&2
     exit 1
 }
+echo "Using $(python3 --version)."
 
+echo "[3/8] Preparing /mnt/share and migrating existing data if present."
 SERVICE_USER=drive-tasks-mini
 if ! id "$SERVICE_USER" >/dev/null 2>&1; then
     useradd --system --user-group --home-dir "$STATE" --no-create-home \
@@ -167,6 +214,7 @@ if ! runuser -u "$SERVICE_USER" -- test -w "$STATE/data" \
 fi
 
 AUTH_FILE="$STATE/config/credentials.json"
+echo "[4/8] Checking application credentials."
 if [[ ! -f "$AUTH_FILE" ]]; then
     echo "Set the separate web-app login (not the SSH login)."
     read -r -p "Application username: " APP_USER </dev/tty
@@ -224,11 +272,17 @@ fi
 
 RELEASE_DIR="$(mktemp -d "$RELEASES/${NEW_VERSION}.XXXXXX")"
 cp -a "$STAGING/." "$RELEASE_DIR/"
-python3 -m venv --copies "$RELEASE_DIR/.venv"
-"$RELEASE_DIR/.venv/bin/python" -m pip install --upgrade pip
-"$RELEASE_DIR/.venv/bin/python" -m pip install -r "$RELEASE_DIR/requirements.txt"
+echo "[5/8] Creating virtualenv and installing Python dependencies in $RELEASE_DIR."
+run_with_progress "Create the Python virtualenv" \
+    python3 -m venv --copies "$RELEASE_DIR/.venv"
+run_with_progress "Upgrade pip" \
+    "$RELEASE_DIR/.venv/bin/python" -m pip install --progress-bar on --upgrade pip
+run_with_progress "Install application dependencies" \
+    "$RELEASE_DIR/.venv/bin/python" -m pip install --progress-bar on \
+    -r "$RELEASE_DIR/requirements.txt"
 chown -R "$SERVICE_USER:$SERVICE_USER" "$RELEASE_DIR"
 
+echo "[6/8] Writing systemd service configuration."
 BACKUP_DIR="$(mktemp -d)"
 for existing in "$SERVICE_FILE" "$ENV_FILE" "$CURRENT_RELEASE"; do
     if [[ -f "$existing" ]]; then
@@ -321,6 +375,7 @@ if ! systemctl daemon-reload || ! systemctl enable "$SERVICE"; then
     exit 1
 fi
 
+echo "[7/8] Starting service and checking health on TCP 2121."
 healthy() {
     python3 - <<'PY'
 import urllib.error
@@ -336,10 +391,13 @@ PY
 }
 
 if systemctl restart "$SERVICE"; then
-    for _ in {1..20}; do
+    for attempt in {1..20}; do
         if systemctl is-active --quiet "$SERVICE" && healthy; then
             echo "Drive Tasks Mini $NEW_VERSION is healthy at http://<server-ip>:2121"
             break
+        fi
+        if ((attempt % 5 == 0)); then
+            echo "[RUNNING] Waiting for the service health check (${attempt}/20 seconds)."
         fi
         sleep 1
     done
@@ -361,6 +419,7 @@ if systemctl restart "$SERVICE"; then
                 fi
             done < <(find "$RELEASES" -mindepth 1 -maxdepth 1 -type d -mtime +30 -print0)
         fi
+        echo "[8/8] Installation completed at $BASE."
         exit 0
     fi
 fi

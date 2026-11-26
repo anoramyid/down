@@ -36,7 +36,13 @@ echo "[2/4] Uploading bundle and receiver to $TARGET."
 scp -o ConnectTimeout=15 "$ARCHIVE" "$TARGET:$REMOTE_ARCHIVE"
 scp -o ConnectTimeout=15 "$ROOT/scripts/receive-mini.sh" "$TARGET:drive-tasks-mini-receiver.sh"
 echo "[3/4] Installing or updating. Enter the sudo password if prompted."
-ssh -tt -o ConnectTimeout=15 "$TARGET" "bash \"\$HOME/drive-tasks-mini-receiver.sh\" \"\$HOME/$REMOTE_ARCHIVE\""
-echo "[4/4] Remote installer finished. If this version was not newer, it left the service unchanged."
-echo "Mini downloader: http://$SERVER_IP:2121"
-echo "Installer logs: ~/drive-tasks-mini-install-logs/ on the server."
+if ssh -tt -o ConnectTimeout=15 "$TARGET" "bash \"\$HOME/drive-tasks-mini-receiver.sh\" \"\$HOME/$REMOTE_ARCHIVE\""; then
+    echo "[4/4] Remote installer finished. If this version was not newer, it left the service unchanged."
+    echo "Mini downloader: http://$SERVER_IP:2121"
+    echo "Complete installer logs: /mnt/share/drive-tasks-mini/install-logs/ on the server."
+else
+    status=$?
+    echo "Remote installation failed (exit $status). Review the streamed output above." >&2
+    echo "Complete installer logs: /mnt/share/drive-tasks-mini/install-logs/ on the server." >&2
+    exit "$status"
+fi
