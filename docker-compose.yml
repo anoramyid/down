@@ -1,0 +1,43 @@
+services:
+  drive-tasks:
+    build: .
+    container_name: drive-tasks
+    restart: unless-stopped
+    ports:
+      - "${BIND_IP:-0.0.0.0}:9191:9191"
+    environment:
+      - APP_USER=${APP_USER:?Set APP_USER in .env}
+      - APP_PASS=${APP_PASS:?Set APP_PASS in .env}
+      - MAX_PARALLEL=2
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - DOWNLOAD_LIMIT_MIB=${DOWNLOAD_LIMIT_MIB:-5}
+      - BROWSER_DOWNLOAD_DIR=/data/browser
+    volumes:
+      - ${DATA_DIR:-./data}:/data
+      - ./config:/config
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+  chromium:
+    image: lscr.io/linuxserver/chromium:latest
+    container_name: drive-browser
+    restart: unless-stopped
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Asia/Jakarta
+      - CUSTOM_USER=${APP_USER:?Set APP_USER in .env}
+      - PASSWORD=${APP_PASS:?Set APP_PASS in .env}
+    ports:
+      - "${BIND_IP:-0.0.0.0}:3001:3001"
+    volumes:
+      - ./config/chromium:/config
+      - ${DATA_DIR:-./data}/browser:/config/Downloads
+    shm_size: "1gb"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

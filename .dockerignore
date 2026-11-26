@@ -1,0 +1,10 @@
+.env
+.git
+.ai
+config/
+data/
+__pycache__/
+*.py[cod]
+README.md
+TSA-X-v7.1.md
+docker-compose.yml

@@ -1,0 +1,62 @@
+<!doctype html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Drive Tasks</title>
+<style>
+:root{color-scheme:light;--bg:#f5f5f7;--c:#fff;--t:#1d1d1f;--m:#6e6e73;--b:rgba(0,0,0,.09);--p:#0071e3;--ok:#248a3d;--okb:#e3f5e8;--er:#d70015;--erb:#ffebed;--rn:#0071e3;--rnb:#e8f2fc;--shadow:0 8px 28px rgba(0,0,0,.045)}
+*{box-sizing:border-box}body{margin:0;font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:var(--bg);color:var(--t);-webkit-font-smoothing:antialiased}
+header{position:sticky;top:0;z-index:5;display:flex;justify-content:space-between;align-items:center;gap:16px;padding:12px max(24px,calc((100vw - 1060px)/2));background:color-mix(in srgb,var(--bg) 82%,transparent);backdrop-filter:saturate(180%) blur(18px);border-bottom:1px solid var(--b)}
+h1{font-size:18px;font-weight:650;letter-spacing:-.025em;margin:0}small,.m{color:var(--m);font-size:13px}header small{font-size:12px}main{max-width:980px;margin:0 auto;padding:0 24px 64px}
+.hero{padding:72px 0 52px;text-align:center}.eyebrow{margin:0 0 16px;color:var(--m);font-size:12px;font-weight:600;letter-spacing:.12em;text-transform:uppercase}.hero h2{max-width:800px;margin:0 auto;font-size:clamp(38px,7vw,68px);font-weight:650;line-height:1.04;letter-spacing:-.055em}.hero p:last-child{max-width:590px;margin:20px auto 0;color:var(--m);font-size:clamp(16px,2vw,20px);line-height:1.45}
+button{font:inherit;font-size:14px;font-weight:500;border:1px solid var(--b);background:var(--c);color:var(--t);border-radius:999px;padding:9px 17px;cursor:pointer;transition:transform .15s,background .15s,box-shadow .15s}
+button:hover,a.s:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(0,0,0,.1)}button:active{transform:scale(.98)}button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid color-mix(in srgb,var(--p) 42%,transparent);outline-offset:2px}
+button.p{background:var(--p);border-color:var(--p);color:#fff}button.p:hover{background:#0077ed}button.s{padding:7px 13px;font-size:13px}
+a.p{display:inline-block;text-decoration:none}a.s{display:inline-block;text-decoration:none;color:var(--p);border:1px solid var(--b);background:var(--c);border-radius:999px;padding:7px 13px;font-size:13px;transition:transform .15s,box-shadow .15s}
+.head-actions{display:flex;align-items:center;gap:10px}h2{font-size:28px;line-height:1.15;letter-spacing:-.035em;font-weight:620;margin:0 0 16px}.section-heading{display:flex;align-items:end;justify-content:space-between;margin:10px 0 18px}.section-heading h2{margin:0}.section-heading p{margin:6px 0 0;color:var(--m);font-size:14px}
+.task{background:var(--c);border:1px solid var(--b);border-radius:20px;padding:19px 21px;margin-bottom:12px;box-shadow:var(--shadow)}
+.settings-card{margin-bottom:38px;padding:22px 24px}.row{display:flex;justify-content:space-between;gap:14px;align-items:flex-start}.t{min-width:0}.t b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:560}
+.bd{padding:4px 11px;border-radius:99px;font-size:12px;font-weight:550;background:var(--b);white-space:nowrap}.bd.running{background:var(--rnb);color:var(--rn)}.bd.done{background:var(--okb);color:var(--ok)}.bd.failed{background:var(--erb);color:var(--er)}
+.bar{height:5px;background:var(--b);border-radius:9px;margin:14px 0 8px;overflow:hidden}.bar i{display:block;height:100%;background:var(--p);border-radius:9px;transition:width .35s}.acts{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+#empty{text-align:center;padding:48px 16px;color:var(--m);background:var(--c);border-radius:20px}
+dialog{border:1px solid var(--b);border-radius:26px;background:var(--c);color:var(--t);width:min(560px,96vw);padding:28px;box-shadow:0 24px 80px rgba(0,0,0,.2)}dialog::backdrop{background:rgba(0,0,0,.42);backdrop-filter:blur(4px)}
+label.l{display:block;margin:18px 0 7px;font-size:13px;font-weight:550;color:var(--m)}input[type=text],input[type=number]{padding:11px 13px;border:1px solid var(--b);border-radius:12px;background:var(--bg);color:var(--t);font:inherit;transition:border-color .15s,box-shadow .15s}input[type=text]{width:100%}input:focus{border-color:var(--p);box-shadow:0 0 0 3px color-mix(in srgb,var(--p) 16%,transparent);outline:none}
+.limit-control{display:flex;gap:8px;align-items:center}.limit-control input{width:110px}.limit-message{font-size:13px;margin-top:8px;color:var(--ok)}.limit-message.error{color:var(--er)}
+@media(max-width:640px){header{padding:11px 16px}.head-actions{gap:6px}header .p{padding:8px 12px;font-size:13px}main{padding:0 16px 40px}.hero{padding:56px 0 40px}.hero h2{font-size:clamp(38px,11vw,56px)}.section-heading{align-items:flex-start;flex-direction:column}.section-heading h2{font-size:25px}.settings-row{flex-direction:column}.limit-control{width:100%}.limit-control input{flex:1;width:auto}.task{padding:16px;border-radius:17px}.settings-card{padding:18px}}
+#err{color:var(--er);margin-top:12px;font-size:13px}.ft{display:flex;justify-content:flex-end;gap:8px;margin-top:22px}details{margin-top:15px}summary{cursor:pointer;color:var(--p);font-size:13px;font-weight:500}
+</style></head><body>
+<header><div><h1>Drive Tasks</h1><small><span id="sum">Unduh URL ke server, lalu ambil file lewat jaringan lokal</span> · <span id="limit">Batas kecepatan dimuat…</span></small></div>
+<div class="head-actions"><a class="p" id="browser-link" target="_blank" rel="noopener">Buka Browser</a><button class="p" onclick="openNew()">+ Download</button></div></header>
+<main><section class="hero"><p class="eyebrow">DOWNLOAD MANAGER</p><h2>Unduh file.<br>Atur kecepatannya.</h2><p>Download langsung ke server, kendalikan batas kecepatan, lalu ambil file dari jaringan lokal.</p></section>
+<div class="section-heading"><div><h2>Download URL</h2><p>Atur kecepatan untuk download yang dikelola aplikasi.</p></div></div>
+<div class="task settings-card"><div class="row settings-row"><div class="t"><b>Batas global</b><small>Untuk semua download dari tombol + Download. Nilai 0 = tanpa batas; unduhan langsung di Chromium tidak terkena limit ini.</small></div>
+<div class="limit-control"><input type="number" id="global-limit" aria-label="Batas global MiB per detik" min="0" max="1024" step="0.1"><button class="s" onclick="setGlobalLimit()">Terapkan</button></div></div><div id="settings-error" class="limit-message"></div></div>
+<div id="list"></div><div id="empty" hidden><b>Belum ada download</b><br>Klik "+ Download" untuk memulai.</div>
+<div class="section-heading" style="margin-top:54px"><div><h2>File hasil browser</h2><p>File yang diunduh melalui Chromium jarak jauh.</p></div></div><div id="browser-files"></div><div id="browser-empty" class="m" hidden>Belum ada file browser.</div></main>
+<dialog id="dlg"><b style="font-size:17px">Download URL</b>
+<label class="l">URL</label><input type="text" id="src" placeholder="https://...">
+<div id="dl"><label class="l">Mode download</label><div class="m">Otomatis: Standar → Mirip browser → Mirip browser + TLS. Naik mode jika ditolak dengan 403 atau 429.</div>
+<label class="l">Limit task (MiB/s)</label><input type="number" id="task-limit" min="0" max="1024" step="0.1" value="0"><div class="m">0 = hanya pakai limit global. Limit task lebih tinggi tetap dibatasi limit global.</div>
+<details><summary>Opsi lanjutan</summary><label class="l">Referer</label><input type="text" id="ref"><label class="l">Cookie</label><input type="text" id="cook" placeholder="nama=nilai; nama2=nilai2"><label class="l">Nama file (opsional)</label><input type="text" id="nm"></details></div>
+<div class="m" style="margin-top:12px">File disimpan di folder download server. Setelah selesai, tekan <b>Ambil file</b> untuk mengunduhnya ke perangkat ini.</div>
+<div id="err"></div>
+<div class="ft"><button onclick="dlg.close()">Batal</button><button class="p" onclick="go()">Mulai</button></div></dialog>
+<script>
+const $=s=>document.querySelector(s),E=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const MODE={std:'Standar',browser:'Mirip browser',tls:'Mirip browser + TLS'},TYPE={download:'Download'},ST={queued:'Antre',running:'Berjalan',done:'Selesai',failed:'Gagal',cancelled:'Dibatalkan'};
+$('#browser-link').href=`https://${location.hostname}:3001/`;
+async function openNew(){$('#err').textContent='';$('#src').value='';$('#task-limit').value='0';dlg.showModal()}
+async function post(b){const r=await fetch('api/tasks',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});return[r,await r.json()]}
+async function go(){const [r,j]=await post({type:'download',src:$('#src').value.trim(),mode:'std',auto:true,limit_mib:Number($('#task-limit').value||0),referer:$('#ref').value.trim(),cookie:$('#cook').value.trim(),name:$('#nm').value.trim()});
+ if(!r.ok){$('#err').textContent=j.error;return}dlg.close();load()}
+const act=async(id,a)=>{await fetch('api/tasks/'+id+(a=='cancel'?'/cancel':''),{method:a=='cancel'?'POST':'DELETE'});load()};
+const retry=async id=>{const x=T.find(t=>t.id==id);await post({...x,mode:'std',auto:true});load()};
+let T=[];
+const card=x=>{const on=x.status=='running'||x.status=='queued';
+ return `<div class="task"><div class="row"><div class="t"><b title="${E(x.src)}">${TYPE[x.type]||E(x.type)}: ${E(x.src)}</b><small>${x.output?'File: '+E(x.output):''}${x.used?' &middot; '+MODE[x.used]:''}${x.limit_mib>0?' · limit task '+x.limit_mib+' MiB/s':''}</small></div><span class="bd ${x.status}">${ST[x.status]}</span></div>
+ ${on||x.status=='done'?`<div class="bar"><i style="width:${x.progress}%"></i></div>`:''}
+ <div class="${x.status=='failed'?'':'m'}" style="font-size:13px;${x.status=='failed'?'color:var(--er);margin-top:8px':''}">${E(x.msg)}${x.note&&x.status!='done'?' &middot; '+E(x.note):''}</div>
+ <div class="acts">${on&&x.type=='download'?`<button class="s" onclick="act('${x.id}','cancel')">Batal</button>`:''}${x.status=='failed'&&x.type=='download'?`<button class="s" onclick="retry('${x.id}')">Ulangi (otomatis)</button>`:''}${x.status=='done'&&x.type=='download'&&x.output?`<button class="s" onclick="location.href='api/tasks/${x.id}/file'">Ambil file</button>`:''}${on?'':`<button class="s" onclick="act('${x.id}','del')">Hapus</button>`}</div></div>`};
+async function loadSettings(){const r=await fetch('api/settings');if(!r.ok)return;const s=await r.json();$('#global-limit').value=s.download_limit_mib;$('#limit').textContent=s.download_limit_mib>0?`Limit ${s.download_limit_mib} MiB/s total`:'Tanpa limit global'}
+async function setGlobalLimit(){const raw=$('#global-limit').value.trim(),r=await fetch('api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({download_limit_mib:raw===''?null:Number(raw)})}),j=await r.json();$('#settings-error').classList.toggle('error',!r.ok);$('#settings-error').textContent=r.ok?'Batas global diperbarui':j.error;if(r.ok)await loadSettings()}
+async function loadBrowserFiles(){const r=await fetch('api/browser-files');if(!r.ok)return;const files=await r.json();$('#browser-empty').hidden=files.length>0;$('#browser-files').innerHTML=files.map(f=>`<div class="task"><div class="row"><div class="t"><b>${E(f.name)}</b><small>${(f.size/1048576).toFixed(1)} MB · ${E(new Date(f.modified*1000).toLocaleString())}</small></div><a class="s" href="api/browser-files/${encodeURIComponent(f.name)}">Ambil file</a></div></div>`).join('')}
+async function load(){const r=await fetch('api/tasks');if(!r.ok)return;T=await r.json();const n=s=>T.filter(x=>x.status==s).length;
+ if(T.length)$('#sum').textContent=`${n('running')+n('queued')} berjalan · ${n('done')} selesai · ${n('failed')} gagal`;$('#empty').hidden=T.length>0;$('#list').innerHTML=T.map(card).join('')}
+load();loadSettings();loadBrowserFiles();setInterval(load,2000);setInterval(loadBrowserFiles,5000);
+</script></body></html>
