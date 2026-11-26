@@ -32,13 +32,61 @@ File downloader disimpan di `DATA_DIR` pada host; download Chromium masuk ke `DA
 
 ## Lite (Python langsung, port 2121)
 
-Lite menjalankan UI statis, Flask/Waitress, dan downloader sebagai service `systemd`; **tidak memasang atau menjalankan Docker/Chromium**. Target installer adalah Debian/Ubuntu dengan `systemd`, akun root atau akses `sudo`, dan internet untuk mengunduh paket Python. Python **3.10 atau lebih baru** diperlukan; Python **3.12.3 didukung**. Dependency aplikasi tercantum di `requirements.txt`.
+Lite menjalankan UI statis, Flask/Waitress, dan downloader sebagai service `systemd`; **tidak memasang atau menjalankan Docker/Chromium**. Target installer adalah Debian/Ubuntu dengan `systemd`, akun root atau akses `sudo`, dan akses internet untuk mengunduh paket Python. Python **3.10 atau lebih baru** diperlukan; Python **3.12.3 didukung**.
 
-Jalankan `bash ./deploy_mini.sh` di Linux/macOS atau `deploy_mini.bat` di Windows. Launcher mengirim bundle Mini dan menjalankan installer remote; `.env`, `config`, serta `data` lokal tidak dikirim. Output menampilkan versi yang dibandingkan, tahap instalasi, dan heartbeat tiap 5 detik saat perintah panjang masih berjalan; output lengkap proses juga disimpan di log server. Installer membandingkan versi numerik `VERSION` dan hanya mengaktifkan source jika versinya lebih baru. Untuk merilis update, naikkan versi, misalnya `1.0.0` ke `1.0.1`. Jika service gagal melewati health check, installer memulihkan konfigurasi systemd dan release sebelumnya. Log lebih dari 30 hari dibersihkan saat instalasi berikutnya.
+### Instalasi
 
-Installer membuat `/mnt/share` hanya bila belum ada; direktori yang sudah ada digunakan tanpa mengubahnya. Source, virtualenv, release, log installer, konfigurasi, dan unduhan berada di `/mnt/share/drive-tasks-mini/`. Pada pemasangan pertama, installer meminta username/password aplikasi secara terpisah dari login SSH; password minimal 6 karakter. Kredensial disimpan sebagai JSON privat di `/mnt/share/drive-tasks-mini/state/config/credentials.json`, dan file unduhan berada di `/mnt/share/drive-tasks-mini/state/data/`. Jika ada instalasi Lite lama, konfigurasi dan unduhan dari `/var/lib/drive-tasks-mini/` disalin tanpa menghapus sumber lama; source lama di `/opt/drive-tasks-mini/` juga dipertahankan. Pastikan filesystem `/mnt/share` dapat ditulis dan mengeksekusi virtualenv oleh user service `drive-tasks-mini`. Service otomatis mulai saat boot dan listen pada TCP 2121. Buka `http://IP-SERVER:2121` dan batasi port tersebut ke jaringan tepercaya.
+Jalankan launcher dari folder proyek: `deploy_mini.bat` di Windows atau `bash ./deploy_mini.sh` di Linux/macOS. Sediakan OpenSSH (`ssh`/`scp`) dan `tar` pada komputer yang menjalankan launcher. Masukkan IPv4 server dan username SSH, lalu verifikasi fingerprint SSH jika diminta. Di server, berikan akses `sudo`/root dan buat username serta password aplikasi saat installer memintanya; password aplikasi minimal 6 karakter dan terpisah dari password SSH.
 
-Periksa service dengan `sudo systemctl status drive-tasks-mini` dan log dengan `sudo journalctl -u drive-tasks-mini`. Log aplikasi berada di `/mnt/share/drive-tasks-mini/state/config/drive-tasks.log`; log installer berada di `/mnt/share/drive-tasks-mini/install-logs/`. Mode Lite tidak menampilkan tombol **Buka Browser**, tidak menyediakan direktori atau endpoint file-browser, dan endpoint browser mengembalikan 404.
+Launcher mengirim bundle Mini ke server dan menjalankan installer. `.env`, `config`, serta `data` lokal tidak dikirim. Installer menampilkan versi, tahap instalasi, dan heartbeat tiap 5 detik selama proses panjang; output lengkap disimpan di log server. Installer membuat `/mnt/share` **hanya jika belum ada**; jika direktori itu sudah ada, installer menggunakannya tanpa mengubah direktori tersebut. Source, virtualenv, release, log installer, konfigurasi, dan unduhan berada di `/mnt/share/drive-tasks-mini/`. Pastikan filesystem tersebut dapat ditulis dan menjalankan virtualenv oleh user service `drive-tasks-mini`.
+
+Pada instalasi pertama, konfigurasi dan unduhan lama dari `/var/lib/drive-tasks-mini/` disalin tanpa menghapus sumber lama; source lama di `/opt/drive-tasks-mini/` juga dipertahankan. Setelah health check berhasil, service berjalan langsung dan otomatis aktif saat server boot. Buka `http://IP-SERVER:2121`; batasi akses TCP 2121 ke jaringan tepercaya.
+
+### Penggunaan
+
+Login menggunakan kredensial aplikasi. Pilih **+ Download**, masukkan URL file langsung, lalu tekan **Mulai**. Batas kecepatan task bersifat opsional; nilai `0` memakai batas global. Opsi lanjutan menyediakan referer, cookie, dan nama file. Dari kartu task, pantau progres, batalkan task yang berjalan, ulangi task gagal, hapus riwayat task, atau ambil file setelah selesai. Batas global dapat diubah dari halaman utama; nilai `0` berarti tanpa batas, dan limit task tidak dapat melewati limit global.
+
+Lite tidak menampilkan tombol **Buka Browser** dan tidak menyediakan direktori atau endpoint file-browser; endpoint browser mengembalikan 404. Lite hanya mengelola unduhan yang dimulai melalui URL di aplikasinya.
+
+### Update
+
+Naikkan nomor patch `VERSION` di source lokal, misalnya dari `1.0.0` menjadi `1.0.1`, lalu jalankan launcher yang sama: `deploy_mini.bat` atau `bash ./deploy_mini.sh`. Installer hanya memasang versi yang lebih baru; versi sama atau lebih lama dilewati. Update membangun release dan virtualenv baru, lalu me-restart service dan menjalankan health check. Jika health check gagal, installer memulihkan release dan konfigurasi service sebelumnya. Data unduhan dan konfigurasi tetap berada di direktori state.
+
+### Cek status dan pemecahan masalah
+
+Jalankan perintah berikut di server:
+
+```bash
+sudo systemctl is-active drive-tasks-mini
+sudo systemctl is-enabled drive-tasks-mini
+sudo systemctl status drive-tasks-mini --no-pager
+```
+
+Kondisi normal adalah `active` dan `enabled`. `inactive` atau `failed` berarti service tidak sedang berjalan; `disabled` berarti service tidak diatur untuk mulai otomatis setelah reboot. Untuk melihat log terbaru atau mengikuti log langsung:
+
+```bash
+sudo journalctl -u drive-tasks-mini -n 100 --no-pager
+sudo journalctl -u drive-tasks-mini -f
+```
+
+Log aplikasi tersimpan di `/mnt/share/drive-tasks-mini/state/config/drive-tasks.log`. Log lengkap installer—baik sukses maupun gagal—tersimpan di `/mnt/share/drive-tasks-mini/install-logs/`. Lihat nama log terbaru dengan `sudo ls -lt /mnt/share/drive-tasks-mini/install-logs/`, lalu baca dengan `sudo tail -n 100 /mnt/share/drive-tasks-mini/install-logs/NAMA_LOG`.
+
+Untuk memeriksa apakah aplikasi merespons di server (tanpa autentikasi, kode `401` diharapkan), jalankan:
+
+```bash
+python3 - <<'PY'
+import urllib.error
+import urllib.request
+
+try:
+    with urllib.request.urlopen("http://127.0.0.1:2121/api/settings", timeout=3) as response:
+        print(response.status)
+except urllib.error.HTTPError as error:
+    print(error.code)
+PY
+```
+
+Respons `401` berarti service merespons dan meminta autentikasi; `200` menunjukkan endpoint berhasil merespons jika autentikasi sudah diberikan. Jika status service `failed`, baca `journalctl` untuk penyebabnya. Setelah memperbaiki masalah konfigurasi, service dapat dijalankan ulang dengan `sudo systemctl restart drive-tasks-mini`. Pastikan `/mnt/share` dapat ditulis/dieksekusi, TCP 2121 diizinkan dari jaringan lokal, dan server memiliki akses internet untuk proses update.
 
 ## Batas download dan retensi
 
