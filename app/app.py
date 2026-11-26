@@ -175,7 +175,7 @@ def download(t):
     if name in (".", ".."):
         name = "download.bin"
     out = safe(os.path.join(dest, name))
-    part, done, tick, last_done = out + ".part", 0, time.monotonic(), 0
+    part, done, tick, last_done = f"{out}.{uuid.uuid4().hex}.part", 0, time.monotonic(), 0
     t["speed"] = 0
     try:
         with open(part, "wb") as f:

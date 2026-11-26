@@ -15,7 +15,14 @@ LEGACY_STATE=/var/lib/drive-tasks-mini
 SERVICE=drive-tasks-mini.service
 SERVICE_FILE="/etc/systemd/system/$SERVICE"
 ENV_FILE=/etc/drive-tasks-mini.env
-mkdir -p "$SHARE_ROOT"
+if [[ -e "$SHARE_ROOT" || -L "$SHARE_ROOT" ]]; then
+    if [[ ! -d "$SHARE_ROOT" ]]; then
+        echo "$SHARE_ROOT exists but is not a directory; refusing to replace it." >&2
+        exit 1
+    fi
+else
+    mkdir -p -- "$SHARE_ROOT"
+fi
 install -d -m 755 "$BASE"
 
 LOG_DIR="$BASE/install-logs"
