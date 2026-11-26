@@ -5,17 +5,33 @@ STAGING="${1:?Usage: install-mini.sh STAGING_DIRECTORY}"
 STAGING="$(cd "$STAGING" && pwd -P)"
 [[ $EUID -eq 0 ]] || { echo "Run this installer with sudo." >&2; exit 1; }
 
-DEPLOY_HOME=/root
-if [[ -n "${SUDO_USER:-}" ]]; then
-    DEPLOY_HOME="$(getent passwd "$SUDO_USER" | cut -d: -f6)"
-    [[ -n "$DEPLOY_HOME" ]] || DEPLOY_HOME=/root
-fi
-LOG_DIR="$DEPLOY_HOME/drive-tasks-mini-install-logs"
+SHARE_ROOT=/mnt/share
+BASE="$SHARE_ROOT/drive-tasks-mini"
+RELEASES="$BASE/releases"
+CURRENT_RELEASE="$BASE/current-release"
+STATE="$BASE/state"
+LEGACY_BASE=/opt/drive-tasks-mini
+LEGACY_STATE=/var/lib/drive-tasks-mini
+SERVICE=drive-tasks-mini.service
+SERVICE_FILE="/etc/systemd/system/$SERVICE"
+ENV_FILE=/etc/drive-tasks-mini.env
+mkdir -p "$SHARE_ROOT"
+install -d -m 755 "$BASE"
+
+LOG_DIR="$BASE/install-logs"
 install -d -m 700 -o "${SUDO_USER:-root}" "$LOG_DIR"
 find "$LOG_DIR" -type f -name 'install-*.log' -mtime +30 -delete
 LOG_FILE="$LOG_DIR/install-$(date +%Y%m%dT%H%M%S).log"
 exec > >(tee -a "$LOG_FILE") 2>&1
 echo "Installer log: $LOG_FILE"
+
+BACKUP_DIR=
+CONFIG_STAGE=
+cleanup_backup() {
+    [[ -z "$BACKUP_DIR" ]] || rm -rf -- "$BACKUP_DIR"
+    [[ -z "$CONFIG_STAGE" ]] || rm -rf -- "$CONFIG_STAGE"
+}
+trap cleanup_backup EXIT
 
 NEW_VERSION="$(tr -d '\r\n' < "$STAGING/VERSION")"
 if [[ ! "$NEW_VERSION" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
@@ -35,17 +51,23 @@ version_is_newer() {
     return 1
 }
 
-BASE=/opt/drive-tasks-mini
-RELEASES="$BASE/releases"
-CURRENT="$BASE/current"
-STATE=/var/lib/drive-tasks-mini
-SERVICE=drive-tasks-mini.service
 OLD_TARGET=
 OLD_VERSION=0.0.0
-if [[ -L "$CURRENT" ]]; then
-    OLD_TARGET="$(readlink -f "$CURRENT")"
-    [[ -n "$OLD_TARGET" && -f "$OLD_TARGET/VERSION" ]] || {
-        echo "The existing current release link is invalid; refusing to replace it." >&2
+LEGACY_TARGET=
+LEGACY_MIGRATION=0
+if [[ -f "$CURRENT_RELEASE" && ! -L "$CURRENT_RELEASE" ]]; then
+    OLD_TARGET="$(tr -d '\r\n' < "$CURRENT_RELEASE")"
+    OLD_TARGET="$(readlink -f "$OLD_TARGET")"
+    RELEASES_REAL="$(readlink -f "$RELEASES")"
+    case "$OLD_TARGET" in
+        "$RELEASES_REAL"/*) ;;
+        *)
+            echo "The current release marker is invalid; refusing to replace it." >&2
+            exit 1
+            ;;
+    esac
+    [[ -f "$OLD_TARGET/VERSION" ]] || {
+        echo "The current release is missing VERSION; refusing to replace it." >&2
         exit 1
     }
     OLD_VERSION="$(tr -d '\r\n' < "$OLD_TARGET/VERSION")"
@@ -57,8 +79,27 @@ if [[ -L "$CURRENT" ]]; then
         echo "Installed Mini version $OLD_VERSION is current or newer; skipping installation."
         exit 0
     fi
-elif [[ -e "$CURRENT" ]]; then
-    echo "$CURRENT exists but is not a release symlink; refusing to replace it." >&2
+elif [[ -e "$CURRENT_RELEASE" || -L "$CURRENT_RELEASE" ]]; then
+    echo "$CURRENT_RELEASE exists but is not a valid release marker; refusing to replace it." >&2
+    exit 1
+elif [[ -L "$LEGACY_BASE/current" ]]; then
+    LEGACY_TARGET="$(readlink -f "$LEGACY_BASE/current")"
+    [[ -n "$LEGACY_TARGET" && -f "$LEGACY_TARGET/VERSION" ]] || {
+        echo "The previous Lite release link is invalid; refusing to migrate it." >&2
+        exit 1
+    }
+    OLD_VERSION="$(tr -d '\r\n' < "$LEGACY_TARGET/VERSION")"
+    if [[ ! "$OLD_VERSION" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
+        echo "The previous Lite VERSION is invalid; refusing to migrate it." >&2
+        exit 1
+    fi
+    if version_is_newer "$OLD_VERSION" "$NEW_VERSION"; then
+        echo "The previous Lite version $OLD_VERSION is newer; update the local VERSION before migrating." >&2
+        exit 1
+    fi
+    LEGACY_MIGRATION=1
+elif [[ -e "$LEGACY_BASE/current" ]]; then
+    echo "$LEGACY_BASE/current exists but is not a release symlink; refusing to migrate it." >&2
     exit 1
 fi
 
@@ -101,6 +142,29 @@ fi
 install -d -o root -g root -m 755 "$BASE" "$RELEASES"
 install -d -o "$SERVICE_USER" -g "$SERVICE_USER" -m 750 \
     "$STATE" "$STATE/data" "$STATE/config"
+
+EXEC_CHECK="$BASE/.exec-check-$$"
+if ! printf '#!/bin/sh\nexit 0\n' > "$EXEC_CHECK" \
+        || ! chmod 700 "$EXEC_CHECK" || ! "$EXEC_CHECK"; then
+    rm -f -- "$EXEC_CHECK"
+    echo "/mnt/share must allow executable files for the Lite service." >&2
+    exit 1
+fi
+rm -f -- "$EXEC_CHECK"
+
+if [[ -d "$LEGACY_STATE" && ! -f "$CURRENT_RELEASE" ]]; then
+    echo "Copying existing Lite configuration and downloads to $STATE (old data is kept)."
+    cp -a -n "$LEGACY_STATE/." "$STATE/"
+    chown -R "$SERVICE_USER:$SERVICE_USER" "$STATE/config"
+fi
+chown "$SERVICE_USER:$SERVICE_USER" "$STATE" "$STATE/data" "$STATE/config"
+chmod 750 "$STATE" "$STATE/data" "$STATE/config"
+if ! runuser -u "$SERVICE_USER" -- test -w "$STATE/data" \
+        || ! runuser -u "$SERVICE_USER" -- test -w "$STATE/config"; then
+    echo "$STATE must be writable by the drive-tasks-mini service user." >&2
+    echo "Check /mnt/share mount ownership and permissions." >&2
+    exit 1
+fi
 
 AUTH_FILE="$STATE/config/credentials.json"
 if [[ ! -f "$AUTH_FILE" ]]; then
@@ -160,12 +224,45 @@ fi
 
 RELEASE_DIR="$(mktemp -d "$RELEASES/${NEW_VERSION}.XXXXXX")"
 cp -a "$STAGING/." "$RELEASE_DIR/"
-python3 -m venv "$RELEASE_DIR/.venv"
+python3 -m venv --copies "$RELEASE_DIR/.venv"
 "$RELEASE_DIR/.venv/bin/python" -m pip install --upgrade pip
 "$RELEASE_DIR/.venv/bin/python" -m pip install -r "$RELEASE_DIR/requirements.txt"
 chown -R "$SERVICE_USER:$SERVICE_USER" "$RELEASE_DIR"
 
-cat > /etc/drive-tasks-mini.env <<EOF
+BACKUP_DIR="$(mktemp -d)"
+for existing in "$SERVICE_FILE" "$ENV_FILE" "$CURRENT_RELEASE"; do
+    if [[ -f "$existing" ]]; then
+        cp -a "$existing" "$BACKUP_DIR/"
+    fi
+done
+
+rollback_install() {
+    systemctl stop "$SERVICE" || true
+    if [[ -f "$BACKUP_DIR/$SERVICE" ]]; then
+        cp -a "$BACKUP_DIR/$SERVICE" "$SERVICE_FILE"
+    else
+        rm -f "$SERVICE_FILE"
+    fi
+    if [[ -f "$BACKUP_DIR/drive-tasks-mini.env" ]]; then
+        cp -a "$BACKUP_DIR/drive-tasks-mini.env" "$ENV_FILE"
+    else
+        rm -f "$ENV_FILE"
+    fi
+    if [[ -f "$BACKUP_DIR/current-release" ]]; then
+        cp -a "$BACKUP_DIR/current-release" "$CURRENT_RELEASE"
+    else
+        rm -f "$CURRENT_RELEASE"
+    fi
+    systemctl daemon-reload || true
+    if [[ -f "$BACKUP_DIR/$SERVICE" ]]; then
+        systemctl restart "$SERVICE" || true
+    else
+        systemctl disable "$SERVICE" || true
+    fi
+}
+
+CONFIG_STAGE="$(mktemp -d /etc/drive-tasks-mini-update.XXXXXX)"
+cat > "$CONFIG_STAGE/drive-tasks-mini.env" <<EOF
 ROOT=$STATE/data
 CONFIG_DIR=$STATE/config
 BROWSER_DOWNLOAD_DIR=$STATE/data/browser
@@ -178,9 +275,9 @@ LOG_LEVEL=INFO
 PYTHONUNBUFFERED=1
 PYTHONDONTWRITEBYTECODE=1
 EOF
-chmod 600 /etc/drive-tasks-mini.env
+chmod 600 "$CONFIG_STAGE/drive-tasks-mini.env"
 
-cat > "/etc/systemd/system/$SERVICE" <<'UNIT'
+cat > "$CONFIG_STAGE/$SERVICE" <<UNIT
 [Unit]
 Description=Drive Tasks Mini Python downloader
 After=network-online.target
@@ -190,25 +287,39 @@ Wants=network-online.target
 Type=simple
 User=drive-tasks-mini
 Group=drive-tasks-mini
-WorkingDirectory=/opt/drive-tasks-mini/current
-EnvironmentFile=/etc/drive-tasks-mini.env
-ExecStart=/opt/drive-tasks-mini/current/.venv/bin/python /opt/drive-tasks-mini/current/app/app.py
+WorkingDirectory=$RELEASE_DIR
+EnvironmentFile=$ENV_FILE
+ExecStart=$RELEASE_DIR/.venv/bin/python $RELEASE_DIR/app/app.py
 Restart=on-failure
 RestartSec=3
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/var/lib/drive-tasks-mini
+ReadWritePaths=$STATE
 
 [Install]
 WantedBy=multi-user.target
 UNIT
+chmod 644 "$CONFIG_STAGE/$SERVICE"
+if ! mv -f "$CONFIG_STAGE/drive-tasks-mini.env" "$ENV_FILE"; then
+    echo "Could not install the systemd environment file; restoring previous configuration." >&2
+    rollback_install
+    exit 1
+fi
+if ! mv -f "$CONFIG_STAGE/$SERVICE" "$SERVICE_FILE"; then
+    echo "Could not install the systemd unit; restoring previous configuration." >&2
+    rollback_install
+    exit 1
+fi
+rm -rf -- "$CONFIG_STAGE"
+CONFIG_STAGE=
 
-systemctl daemon-reload
-systemctl enable "$SERVICE"
-ln -s "$RELEASE_DIR" "$BASE/current.next"
-mv -Tf "$BASE/current.next" "$CURRENT"
+if ! systemctl daemon-reload || ! systemctl enable "$SERVICE"; then
+    echo "Could not load or enable the systemd service; restoring previous configuration." >&2
+    rollback_install
+    exit 1
+fi
 
 healthy() {
     python3 - <<'PY'
@@ -233,6 +344,15 @@ if systemctl restart "$SERVICE"; then
         sleep 1
     done
     if systemctl is-active --quiet "$SERVICE" && healthy; then
+        CURRENT_STAGE="$BASE/.current-release-$$"
+        if ! printf '%s\n' "$RELEASE_DIR" > "$CURRENT_STAGE" \
+                || ! mv -f "$CURRENT_STAGE" "$CURRENT_RELEASE" \
+                || ! chmod 644 "$CURRENT_RELEASE"; then
+            rm -f -- "$CURRENT_STAGE"
+            echo "Could not save the active release marker; rolling back." >&2
+            rollback_install
+            exit 1
+        fi
         if [[ -n "$OLD_TARGET" ]]; then
             while IFS= read -r -d '' candidate; do
                 [[ "$candidate" == "$OLD_TARGET" ]] && continue
@@ -248,14 +368,11 @@ fi
 echo "Service health check failed; rolling back the application release." >&2
 systemctl --no-pager --full status "$SERVICE" || true
 journalctl -u "$SERVICE" --no-pager -n 40 || true
-if [[ -n "$OLD_TARGET" ]]; then
-    ln -s "$OLD_TARGET" "$BASE/current.rollback"
-    mv -Tf "$BASE/current.rollback" "$CURRENT"
-    systemctl restart "$SERVICE" || true
-    echo "Restored version $OLD_VERSION; data and configuration were not changed." >&2
+if [[ -n "$OLD_TARGET" || "$LEGACY_MIGRATION" -eq 1 ]]; then
+    rollback_install
+    echo "Restored version $OLD_VERSION; the original data and configuration were preserved." >&2
 else
-    systemctl stop "$SERVICE" || true
-    rm -f "$CURRENT"
+    rollback_install
     echo "First install failed; no application release is active." >&2
 fi
 exit 1
