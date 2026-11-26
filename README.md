@@ -1,6 +1,6 @@
 # Drive Tasks (Docker, port 9191)
 
-Gunakan Chromium sungguhan dari browser jarak jauh, atau masukkan URL ke downloader terkelola. Hasilnya disimpan di server dan dapat diambil ke perangkat dari web lokal.
+Gunakan Chromium sungguhan dari browser jarak jauh, atau masukkan URL ke downloader terkelola. Hasilnya disimpan di server dan dapat diambil ke perangkat dari web lokal. Antarmuka downloader memakai tema terang.
 
 ## Jalankan
 ```bash
@@ -15,12 +15,14 @@ Launcher `deploy.sh` (Linux/macOS) dan `deploy.bat` (Windows) mengirim source te
 
 Persyaratan server: Linux yang didukung installer resmi Docker, akses internet, dan akun root atau akun dengan `sudo`. Jika Docker/Compose belum tersedia, installer mencoba memasangnya. Pada pemasangan pertama, installer meminta username/password login aplikasi secara terpisah dari kredensial SSH. Username aplikasi menerima huruf, angka, titik, `_` dan `-`; password harus 6–128 karakter dan tidak boleh mengandung tanda petik tunggal atau backslash. Gunakan password yang lebih panjang bila memungkinkan. File `.env` server dibuat dengan permission terbatas dan tidak ditimpa saat update. Jika instalasi gagal, output dicatat di `~/drive-tasks-install-logs/`; log yang lebih lama dari 30 hari dibersihkan saat instalasi berikutnya.
 
-Jalankan dari folder proyek: `bash ./deploy.sh` di Linux/macOS, atau klik/jalankan `deploy.bat` di Windows. Launcher Windows menggunakan batch langsung, tanpa PowerShell. Arsip deployment hanya berisi source dan dokumentasi; `.env`, `config` dan `data` lokal tidak dikirim. Update berikutnya menimpa source aplikasi di server tetapi mempertahankan konfigurasi dan file download server. Setelah selesai, buka `http://IP-SERVER:9191` atau `https://IP-SERVER:3001`. Batasi port tersebut melalui firewall hanya untuk jaringan tepercaya.
+Jalankan dari folder proyek: `bash ./deploy.sh` di Linux/macOS, atau klik/jalankan `deploy.bat` di Windows. Launcher Windows menggunakan batch langsung, tanpa PowerShell. Output deployment menunjukkan tahap [1/5]–[5/5]; jangan jalankan deployment kedua sebelum proses pertama selesai. Arsip hanya berisi source dan dokumentasi—`.env`, `config` dan `data` lokal tidak dikirim. Setiap kali launcher dijalankan, source lokal diunggah dan Compose membangun ulang layanan; **saat ini belum ada pemeriksaan versi otomatis atau rollback otomatis**. Source aplikasi diganti, tetapi konfigurasi dan file download server dipertahankan. Setelah selesai, buka `http://IP-SERVER:9191` atau `https://IP-SERVER:3001`. Batasi port tersebut melalui firewall hanya untuk jaringan tepercaya.
+
+Jika deployment gagal, baca output di jendela launcher atau log terbaru di `~/drive-tasks-install-logs/` pada server. Log lama dibersihkan saat installer berikutnya berjalan.
 
 ## Login Git dengan OTP
 Di Windows, jalankan `git-auth.bat`. Batch membuka halaman login; selesaikan OTP sendiri di browser, lalu buat access token dengan akses baca/tulis minimum untuk repository. Setelah kembali ke jendela batch, `git ls-remote` memicu Git Credential Manager untuk menerima username dan token serta menyimpannya. Token tidak ditulis ke file proyek. URL Git saat ini memakai HTTP, jadi gunakan hanya pada LAN tepercaya—token tidak terenkripsi selama transmisi.
 
-Downloader URL mencoba Standar, Browser, lalu TLS saat menerima 403/429. Batas global awal (default 5 MiB/s) dapat diubah dari UI dan disimpan di `config/settings.json`; nilai 0–1024 MiB/s, dengan `0` berarti tanpa batas. Setiap task juga dapat diberi limit sendiri; `0` mengikuti limit global, dan limit task tidak dapat melewati batas global. Batas ini tidak mencakup download yang dimulai langsung di Chromium.
+Downloader URL mencoba Standar, Browser, lalu TLS saat menerima 403/429. Batas global awal (default 5 MiB/s dari `.env`) dapat diubah dari UI dan disimpan di `config/settings.json`; nilai 0–1024 MiB/s, dengan `0` berarti tanpa batas. Setiap task juga dapat diberi limit sendiri; `0` mengikuti limit global, dan limit task tidak dapat melewati batas global. Batas ini tidak mencakup download yang dimulai langsung di Chromium.
 
 File downloader disimpan di `DATA_DIR` pada host; download Chromium masuk ke `DATA_DIR/browser`. Keduanya tersedia di UI untuk diambil ke perangkat lokal dan dibersihkan setelah 30 hari.
 
